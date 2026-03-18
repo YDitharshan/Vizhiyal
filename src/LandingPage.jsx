@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import React, { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -263,7 +264,7 @@ function Header({ page, setPage }) {
 
         <div className="hidden items-center gap-3 md:flex">
           <AppButton variant="secondary" onClick={() => setPage("login")}>Login</AppButton>
-          <AppButton onClick={() => setPage("login")}>Register</AppButton>
+          <AppButton onClick={() => navigate("/register")}>Register</AppButton>
         </div>
 
         <button className="md:hidden" onClick={() => setOpen(!open)}>
@@ -800,6 +801,7 @@ function Footer() {
 }
 
 export default function VizhiyalEventManagementUI() {
+  const navigate = useNavigate();
   const [page, setPage] = useState("home");
   const [selectedVendor, setSelectedVendor] = useState(vendors[0]);
   const [user, setUser] = useState(null);

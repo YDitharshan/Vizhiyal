@@ -223,7 +223,7 @@ function VendorCard({ vendor, onView }) {
   );
 }
 
-function Header({ page, setPage }) {
+function Header({ page, setPage, onRegister, onLogin }) {
   const [open, setOpen] = useState(false);
   const nav = [
     { label: "Home", key: "home" },
@@ -263,8 +263,12 @@ function Header({ page, setPage }) {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
-          <AppButton variant="secondary" onClick={() => setPage("login")}>Login</AppButton>
-          <AppButton onClick={() => navigate("/register")}>Register</AppButton>
+              <AppButton variant="secondary" onClick={onLogin}>
+                Login
+              </AppButton>
+              <AppButton onClick={onRegister}>
+                Register
+              </AppButton>
         </div>
 
         <button className="md:hidden" onClick={() => setOpen(!open)}>
@@ -835,7 +839,12 @@ export default function VizhiyalEventManagementUI() {
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
-      <Header page={page} setPage={setPage} />
+      <Header
+        page={page}
+        setPage={setPage}
+        onRegister={() => navigate("/register")}
+        onLogin={() => setPage("login")}
+      />
       <AnimatePresence mode="wait">
         <motion.div key={page} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -14 }} transition={{ duration: 0.25 }}>
           {page === "home" ? <LandingPage vendors={vendors} onOpenVendor={openVendor} onSearch={searchVendors} filters={filters} setFilters={setFilters} setPage={setPage} /> : null}

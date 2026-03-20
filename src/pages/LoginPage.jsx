@@ -12,10 +12,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleLogin = () => {
-    if (role === "Vendor") navigate("/vendor-dashboard", { state: { email, role } });
-    else navigate("/");
-  };
+const handleLogin = () => {
+  if (role === "Vendor") {
+    navigate("/vendor-dashboard", { state: { email, role } });
+  } else {
+    navigate("/client-dashboard", { state: { email, role } });
+  }
+};
 
   return (
     <section className="relative min-h-screen overflow-hidden px-5 py-16 lg:px-8">

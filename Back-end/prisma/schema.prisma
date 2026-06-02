@@ -1,0 +1,455 @@
+// Vizhiyal EMS — Prisma schema (PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Enums ─────────────────────────────────────────────────────
+enum Role {
+  buyer
+  seller
+  admin
+  superadmin
+}
+
+enum SellerStatus {
+  none
+  pending
+  approved
+  rejected
+}
+
+enum GigStatus {
+  active
+  paused
+}
+
+enum PackageType {
+  basic
+  standard
+  premium
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  in_progress
+  pending_completion
+  completed
+  cancelled
+}
+
+enum DisputeStatus {
+  open
+  under_review
+  resolved
+  closed
+}
+
+enum DisputeType {
+  no_show
+  poor_quality
+  wrong_service
+  payment_issue
+  other
+}
+
+enum NotificationType {
+  booking
+  review
+  dispute
+  payout
+  message
+  system
+}
+
+enum PayoutStatus {
+  pending
+  processing
+  paid
+  rejected
+}
+
+enum PromoType {
+  percent
+  flat
+}
+
+enum PromoStatus {
+  active
+  inactive
+}
+
+enum OfferStatus {
+  pending
+  accepted
+  rejected
+  withdrawn
+}
+
+// ── User ──────────────────────────────────────────────────────
+model User {
+  id           String       @id @default(uuid())
+  name         String
+  email        String       @unique
+  password     String
+  role         Role         @default(buyer)
+  avatar       String?
+  phone        String       @default("")
+  location     String       @default("")
+  bio          String       @default("")
+  sellerStatus SellerStatus @default(none)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  vendorProfile    VendorProfile?
+  buyerBookings    Booking[]        @relation("BuyerBookings")
+  reviews          Review[]         @relation("BuyerReviews")
+  disputesRaised   Dispute[]        @relation("DisputeRaiser")
+  conversations    Conversation[]   @relation("ConversationParticipants")
+  sentMessages     Message[]        @relation("MessageSender")
+  notifications    Notification[]
+  promosCreated    PromoCode[]      @relation("PromoCreator")
+  announcements    Announcement[]   @relation("AnnouncementCreator")
+  offersAsBuyer    Offer[]          @relation("BuyerOffers")
+
+  @@map("users")
+}
+
+// ── VendorProfile ─────────────────────────────────────────────
+model VendorProfile {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  businessName String
+  category     String
+  description  String   @default("")
+  location     String   @default("")
+  portfolio      String[]
+  tagline        String   @default("")
+  languages      String[]
+  portfolioItems Json     @default("[]")
+  workExperience Json     @default("[]")
+  skills         Json     @default("[]")
+  certifications Json     @default("[]")
+  avgRating      Float    @default(0)
+  totalReviews   Int      @default(0)
+  isVerified     Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gigs         Gig[]
+  reviews      Review[]              @relation("VendorReviews")
+  payouts      Payout[]
+  availability VendorAvailability[]
+  offers       Offer[]               @relation("SellerOffers")
+
+  @@map("vendor_profiles")
+}
+
+// ── VendorAvailability ────────────────────────────────────────
+model VendorAvailability {
+  id       String        @id @default(uuid())
+  vendorId String
+  vendor   VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  date     DateTime      // midnight UTC — date normalised on write
+
+  createdAt DateTime @default(now())
+
+  @@unique([vendorId, date])
+  @@map("vendor_availability")
+}
+
+// ── Gig ───────────────────────────────────────────────────────
+model Gig {
+  id       String        @id @default(uuid())
+  vendorId String
+  vendor   VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String
+  category    String
+
+  basicPrice    Float
+  basicDesc     String   @default("")
+  basicFeatures String[]
+
+  standardPrice Float
+  standardDesc  String   @default("")
+  standardFeatures String[]
+
+  premiumPrice  Float
+  premiumDesc   String   @default("")
+  premiumFeatures String[]
+
+  tags         String[]
+  location     String   @default("")
+  responseTime Int      @default(7)   // delivery days
+
+  images   String[]
+  status   GigStatus @default(active)
+  featured Boolean   @default(false)
+
+  // Per-gig rating stats — updated by review controller on every review create/remove
+  avgRating    Float @default(0)
+  totalReviews Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+  offers   Offer[]
+  reviews  Review[]
+
+  @@map("gigs")
+}
+
+// ── Booking ───────────────────────────────────────────────────
+model Booking {
+  id      String @id @default(uuid())
+
+  buyerId String
+  buyer   User   @relation("BuyerBookings", fields: [buyerId], references: [id])
+
+  gigId String
+  gig   Gig    @relation(fields: [gigId], references: [id])
+
+  vendorId    String
+  packageType PackageType
+  eventDate   DateTime
+  eventType   String        @default("")
+  notes       String        @default("")
+
+  totalAmount Float
+  commission  Float
+  promoCode   String        @default("")
+  discount    Float         @default(0)
+
+  status    BookingStatus @default(pending)
+
+  // Completion evidence (submitted by seller, confirmed by buyer)
+  completionNote        String    @default("")
+  completionImages      String[]
+  completionSubmittedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  review  Review?
+  dispute Dispute?
+  offer   Offer?
+
+  @@map("bookings")
+}
+
+// ── Review ────────────────────────────────────────────────────
+model Review {
+  id        String @id @default(uuid())
+
+  bookingId String  @unique       // one review per booking
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  buyerId String
+  buyer   User   @relation("BuyerReviews", fields: [buyerId], references: [id])
+
+  vendorId String
+  vendor   VendorProfile @relation("VendorReviews", fields: [vendorId], references: [id])
+
+  gigId String
+  gig   Gig    @relation(fields: [gigId], references: [id], onDelete: Cascade)
+
+  rating  Int    // 1–5
+  comment String @default("")
+
+  flagged Boolean @default(false)
+  removed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("reviews")
+}
+
+// ── Conversation ──────────────────────────────────────────────
+model Conversation {
+  id           String    @id @default(uuid())
+  participants User[]    @relation("ConversationParticipants")
+  lastMessage  String    @default("")
+  lastAt       DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+
+  messages Message[]
+  offers   Offer[]
+
+  @@map("conversations")
+}
+
+// ── Message ───────────────────────────────────────────────────
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  senderId String
+  sender   User   @relation("MessageSender", fields: [senderId], references: [id])
+
+  content String
+  read    Boolean  @default(false)
+  sentAt  DateTime @default(now())
+
+  @@map("messages")
+}
+
+// ── Dispute ───────────────────────────────────────────────────
+model Dispute {
+  id        String @id @default(uuid())
+
+  bookingId String  @unique
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  raisedById String
+  raisedBy   User   @relation("DisputeRaiser", fields: [raisedById], references: [id])
+
+  type        DisputeType
+  description String
+
+  status     DisputeStatus @default(open)
+  adminNote  String        @default("")
+  resolution String        @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("disputes")
+}
+
+// ── Notification ──────────────────────────────────────────────
+model Notification {
+  id      String @id @default(uuid())
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type    NotificationType
+  title   String
+  body    String           @default("")
+  link    String           @default("")   // optional deep-link e.g. /orders/:id
+  read    Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+// ── Payout ────────────────────────────────────────────────────
+model Payout {
+  id       String @id @default(uuid())
+  vendorId String
+  vendor   VendorProfile @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  amount      Float         // gross amount requested
+  commission  Float         // platform fee already deducted
+  netAmount   Float         // amount vendor receives
+
+  bankName      String @default("")
+  accountNumber String @default("")
+  accountName   String @default("")
+
+  status      PayoutStatus @default(pending)
+  adminNote   String       @default("")
+  processedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payouts")
+}
+
+// ── PromoCode ─────────────────────────────────────────────────
+model PromoCode {
+  id   String @id @default(uuid())
+
+  code          String     @unique
+  discountType  PromoType
+  discountValue Float
+  minOrder      Float      @default(0)
+  usageLimit    Int        @default(100)
+  usedCount     Int        @default(0)
+  status        PromoStatus @default(active)
+  expiresAt     DateTime?
+
+  createdById String
+  createdBy   User   @relation("PromoCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("promo_codes")
+}
+
+// ── Announcement ───────────────────────────────────────────────
+// Stores broadcast announcements created by admin/superadmin.
+// Each announcement fans out individual Notification rows to users;
+// those notifications carry link = "ann:<announcement.id>" so they
+// can be bulk-read when the announcement is closed.
+model Announcement {
+  id          String    @id @default(uuid())
+  title       String
+  body        String
+  target      String    @default("all")    // all | buyers | sellers
+  priority    String    @default("medium") // low | medium | high
+  status      String    @default("active") // active | inactive
+  notified    Int       @default(0)
+  expiresAt   DateTime?
+
+  createdById String
+  createdBy   User      @relation("AnnouncementCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("announcements")
+}
+
+// ── Offer ─────────────────────────────────────────────────────
+// A custom offer sent by a seller to a buyer inside a conversation.
+// Buyer can accept (→ creates booking) reject, or ignore.
+// Seller can withdraw before acceptance.
+model Offer {
+  id             String        @id @default(uuid())
+
+  conversationId String
+  conversation   Conversation  @relation(fields: [conversationId], references: [id])
+
+  sellerId       String
+  seller         VendorProfile @relation("SellerOffers", fields: [sellerId], references: [id])
+
+  buyerId        String
+  buyer          User          @relation("BuyerOffers", fields: [buyerId], references: [id])
+
+  gigId          String
+  gig            Gig           @relation(fields: [gigId], references: [id])
+
+  amount       Float
+  deliveryDays Int       @default(7)
+  deliverables String    @default("")
+  timeline     String    @default("")
+  note         String    @default("")
+  eventDate    DateTime?
+
+  status    OfferStatus @default(pending)
+
+  bookingId String?  @unique
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("offers")
+}

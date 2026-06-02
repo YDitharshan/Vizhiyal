@@ -1,0 +1,58 @@
+services:
+  # ── PostgreSQL ────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vizhiyal
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: vizhiyal
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432" # expose so devs can connect with DBeaver / pgAdmin locally
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vizhiyal -d vizhiyal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Backend (Node / Express / Prisma) ────────────────────────
+  backend:
+    build:
+      context: ./Back-end
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://postgres:root@host.docker.internal:5432/vizhiyal
+      JWT_SECRET: vizhiyal_jwt_secret_key_2025_change_in_production
+      JWT_EXPIRES_IN: 7d
+      CLIENT_URL: http://localhost:5173
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./Back-end/src:/app/src          # live-reload: edit src/ → nodemon restarts instantly
+      - ./Back-end/server.js:/app/server.js  # live-reload: edit server.js too
+      - ./Back-end/public:/app/public    # uploaded files survive container restarts
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Frontend (React / Vite) ───────────────────────────────────
+  frontend:
+    build:
+      context: ./Front-end
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:5000/api
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./Front-end/src:/app/src          # live-reload: edit src/ → Vite HMR updates instantly
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

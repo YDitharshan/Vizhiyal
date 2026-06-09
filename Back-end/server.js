@@ -19,6 +19,8 @@ import promoRoutes        from "./src/routes/promoCode.routes.js";
 import uploadRoutes       from "./src/routes/upload.routes.js";
 import adminRoutes        from "./src/routes/admin.routes.js";
 import offerRoutes        from "./src/routes/offer.routes.js";
+import recommendRoutes    from "./src/routes/recommend.routes.js";
+import eventRoutes        from "./src/routes/event.routes.js";
 import { errorHandler, notFound } from "./src/middleware/error.middleware.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -56,6 +58,8 @@ app.use("/api/promos",        promoRoutes);
 app.use("/api/upload",        uploadRoutes);
 app.use("/api/admin",         adminRoutes);
 app.use("/api/offers",        offerRoutes);
+app.use("/api/recommend",     recommendRoutes);
+app.use("/api/events",        eventRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

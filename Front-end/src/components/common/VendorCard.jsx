@@ -7,7 +7,7 @@ import { MapPin, Star, Heart, Sparkles } from "lucide-react";
 import { useWishlist } from "../../hooks/useWishlist";
 import UserAvatar from "./UserAvatar";
 
-export default function VendorCard({ vendor }) {
+export default function VendorCard({ vendor, recommendation }) {
   const navigate = useNavigate();
   const { toggle, isWishlisted } = useWishlist();
   const saved = isWishlisted(vendor.id);
@@ -35,6 +35,17 @@ export default function VendorCard({ vendor }) {
         <span className="absolute top-2 left-2 bg-primary text-white text-xs font-medium px-2 py-1 rounded-full">
           {vendor.category}
         </span>
+
+        {/* AI match badge — only shown when this card came from the recommender */}
+        {recommendation?.matchScore != null && (
+          <span className="absolute bottom-2 right-2 flex items-center gap-1 bg-accent text-white text-xs font-semibold px-2 py-1 rounded-full shadow-sm">
+            <Sparkles className="w-3 h-3" />
+            {Math.round(recommendation.matchScore)}% match
+            {recommendation.distanceKm != null && (
+              <span className="font-normal opacity-90">· {recommendation.distanceKm} km</span>
+            )}
+          </span>
+        )}
 
         {/* Featured badge */}
         {vendor.featured && (

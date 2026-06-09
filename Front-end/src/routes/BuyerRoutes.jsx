@@ -12,6 +12,9 @@ import OrderDetail      from "../pages/buyer/OrderDetail";
 import Disputes         from "../pages/buyer/Disputes";
 import Notifications    from "../pages/buyer/Notifications";
 import Wishlist         from "../pages/buyer/Wishlist";
+import EventPlanner     from "../pages/buyer/EventPlanner";
+import Events           from "../pages/buyer/Events";
+import EventDetail      from "../pages/buyer/EventDetail";
 import Profile          from "../pages/buyer/Profile";
 import AccountSettings  from "../pages/buyer/AccountSettings";
 import PaymentSummary   from "../pages/buyer/PaymentSummary";
@@ -45,6 +48,9 @@ export default function BuyerRoutes() {
       <Route path="/disputes"           element={<Protect><BuyerLayout><Disputes /></BuyerLayout></Protect>} />
       <Route path="/notifications"      element={<Protect><BuyerLayout><Notifications /></BuyerLayout></Protect>} />
       <Route path="/wishlist"           element={<Protect><BuyerLayout><Wishlist /></BuyerLayout></Protect>} />
+      <Route path="/plan-event"         element={<Protect><BuyerLayout><EventPlanner /></BuyerLayout></Protect>} />
+      <Route path="/events"             element={<Protect><BuyerLayout><Events /></BuyerLayout></Protect>} />
+      <Route path="/events/:id"         element={<Protect><BuyerLayout><EventDetail /></BuyerLayout></Protect>} />
       <Route path="/profile"            element={<Protect><BuyerLayout><Profile /></BuyerLayout></Protect>} />
       <Route path="/settings"           element={<Protect><BuyerLayout><AccountSettings /></BuyerLayout></Protect>} />
       <Route path="/payment"            element={<Protect><BuyerLayout><PaymentSummary /></BuyerLayout></Protect>} />

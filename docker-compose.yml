@@ -10,7 +10,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432" # expose so devs can connect with DBeaver / pgAdmin locally
+      - "5434:5432" # host 5434 → container 5432 (5432/5433 already taken on this host)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vizhiyal -d vizhiyal"]
       interval: 5s
@@ -25,16 +25,41 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://postgres:root@host.docker.internal:5432/vizhiyal
+      # Connect to the postgres service by its compose name (vizhiyal user, see postgres service env).
+      DATABASE_URL: postgresql://vizhiyal:root@postgres:5432/vizhiyal
       JWT_SECRET: vizhiyal_jwt_secret_key_2025_change_in_production
       JWT_EXPIRES_IN: 7d
       CLIENT_URL: http://localhost:5173
+      ML_SERVICE_URL: http://ml-service:8000
+      # The export-vendors-csv.js script writes here; the path maps to the
+      # ml-service data dir via the bind mount below, so /train can read it.
+      VENDORS_CSV_OUT: /app/mldata/vendors.csv
     ports:
-      - "5000:5000"
+      - "5001:5000" # host 5001 → container 5000 (macOS AirPlay holds 5000)
     volumes:
       - ./Back-end/src:/app/src          # live-reload: edit src/ → nodemon restarts instantly
       - ./Back-end/server.js:/app/server.js  # live-reload: edit server.js too
       - ./Back-end/public:/app/public    # uploaded files survive container restarts
+      - ./Back-end/prisma:/app/prisma    # so seed/backfill/export scripts are in the container
+      - ./ml-service/data:/app/mldata    # export drops vendors.csv where ml-service reads it
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── ML service (Python / FastAPI / scikit-learn) ──────────────
+  # Vendor recommender. Reads data/vendors.csv (produced by the backend's
+  # export-vendors-csv.js) and serves /recommend, /similar, /train, /health.
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ml-service/app:/app/app      # live-reload friendly: edit app/ code
+      - ./ml-service/data:/app/data    # vendors.csv exported by the backend lands here
+      - mlmodels:/app/models           # persisted joblib model survives restarts
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,7 +71,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      VITE_API_URL: http://localhost:5000/api
+      VITE_API_URL: http://localhost:5001/api # matches backend's remapped host port
     ports:
       - "5173:5173"
     volumes:
@@ -56,3 +81,4 @@ services:
 
 volumes:
   pgdata:
+  mlmodels:

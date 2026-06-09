@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { MapPin, Star, Heart, ShieldCheck } from "lucide-react";
 import { useWishlist } from "../../hooks/useWishlist";
 import UserAvatar from "./UserAvatar";
+import ReliabilityBadge from "./ReliabilityBadge";
 
 export default function GigCard({ gig }) {
   const navigate = useNavigate();
@@ -73,6 +74,15 @@ export default function GigCard({ gig }) {
           <span className="text-xs text-gray-600 truncate">{gig.vendorName}</span>
           {gig.verified && (
             <ShieldCheck className="w-3 h-3 text-accent flex-shrink-0" />
+          )}
+          {gig.reliabilityScore >= 70 && (
+            <ReliabilityBadge
+              score={gig.reliabilityScore}
+              tier={gig.reliabilityTier}
+              size="sm"
+              showLabel={false}
+              className="ml-auto flex-shrink-0"
+            />
           )}
         </div>
 

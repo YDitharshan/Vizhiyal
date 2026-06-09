@@ -4,6 +4,7 @@
 import { validationResult } from "express-validator";
 import prisma from "../config/db.js";
 import { incrementPromoUsage } from "./promoCode.controller.js";
+import { computeAndSaveReliability } from "../services/reliability.service.js";
 
 const COMMISSION_RATE = 0.15; // 15% platform fee
 
@@ -267,6 +268,8 @@ export const getBookingById = async (req, res) => {
             review: { select: { id: true, rating: true, comment: true, createdAt: true } },
           },
         });
+        // Auto-completion also affects reliability.
+        computeAndSaveReliability(booking.vendorId).catch(() => {});
       }
     }
 
@@ -360,6 +363,10 @@ export const updateBookingStatus = async (req, res) => {
       data:  { status },
     });
 
+    // Completed/cancelled changes a vendor's reliability inputs — recompute.
+    if (["completed", "cancelled"].includes(status))
+      computeAndSaveReliability(updated.vendorId).catch(() => {});
+
     return res.json({ success: true, booking: updated });
   } catch (err) {
     console.error("updateBookingStatus error:", err);
@@ -441,6 +448,9 @@ export const confirmCompletion = async (req, res) => {
       where: { id: req.params.id },
       data:  { status: "completed" },
     });
+
+    // A completed booking changes this vendor's reliability inputs — recompute.
+    computeAndSaveReliability(updated.vendorId).catch(() => {});
 
     // Notify the seller
     const vendorProfile = await prisma.vendorProfile.findUnique({

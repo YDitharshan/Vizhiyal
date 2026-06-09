@@ -6,7 +6,7 @@ import { useState, useRef, useEffect } from "react";
 import {
   Search, Bell, MessageSquare, Heart,
   ChevronDown, ShoppingBag, X, Menu,
-  LogOut, ArrowLeftRight,
+  LogOut, ArrowLeftRight, Sparkles,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -163,6 +163,17 @@ export default function Navbar() {
 
           {/* ── Authenticated-only icons ───────────────────── */}
           {auth && (<>
+
+          {/* Plan Event — flagship Event Bundle Builder entry point */}
+          <button
+            onClick={() => navigate("/plan-event")}
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+              isActive("/plan-event") || isActive("/events") ? "text-primary bg-primary-50" : "text-gray-700 hover:text-primary hover:bg-gray-50"
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            Plan Event
+          </button>
 
           {/* ── Notification bell ───────────────────────────── */}
           <div className="relative">
@@ -393,6 +404,8 @@ export default function Navbar() {
                 {[
                   { label: "Home",         path: "/home"         },
                   { label: "Find Vendors", path: "/search"       },
+                  { label: "Plan Event",   path: "/plan-event"   },
+                  { label: "My Events",    path: "/events"       },
                   { label: "My Orders",    path: "/orders"       },
                   { label: "My Disputes",  path: "/disputes"     },
                   { label: "Messages",     path: "/messages"     },

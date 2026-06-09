@@ -14,10 +14,12 @@ import {
   ClipboardList, Smartphone, UserCheck, Store,
 } from "lucide-react";
 import GigCard from "../../components/common/GigCard";
+import VendorCard from "../../components/common/VendorCard";
 import UserAvatar from "../../components/common/UserAvatar";
 import { useAuth } from "../../context/AuthContext";
 import { gigApi } from "../../services/gigApi";
-import { adaptGig } from "../../utils/adapters";
+import { recommendApi } from "../../services/recommendApi";
+import { adaptGig, adaptVendor } from "../../utils/adapters";
 import { notificationApi } from "../../services/notificationApi";
 import { messageApi      } from "../../services/messageApi";
 import { useNotificationPoll } from "../../hooks/useNotificationPoll";
@@ -113,6 +115,7 @@ export default function LoggedInHome() {
   const [catGigs,     setCatGigs]     = useState([]);
   const [allGigs,     setAllGigs]     = useState([]);
   const [proGigs,     setProGigs]     = useState([]);
+  const [recVendors,  setRecVendors]  = useState([]); // ML recommendations
   const [vendorLoading, setVendorLoading] = useState(true);
   const profileRef = useRef(null);
   const scrollRef  = useRef(null);
@@ -152,6 +155,26 @@ export default function LoggedInHome() {
       setProGigs((data.gigs || []).map(adaptGig))
     ).catch(() => {});
   }, []);
+
+  // ML recommendations — personalised by the buyer's saved city + recent category.
+  // Each item carries the raw VendorProfile (adapted for the card) plus the
+  // recommender metadata (match score / distance) for the badge.
+  useEffect(() => {
+    const recentCat = getRecentCategories()[0];
+    recommendApi.vendors({
+      limit: 8,
+      ...(auth?.location && { location: auth.location }),
+      ...(recentCat && recentCat !== "All" && { category: recentCat }),
+    })
+      .then(({ data }) => {
+        const list = (data.vendors || []).map((v) => ({
+          vendor: adaptVendor(v),
+          recommendation: v.recommendation,
+        }));
+        setRecVendors(list);
+      })
+      .catch(() => setRecVendors([]));
+  }, [auth?.location]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Role helpers — new auth shape uses single `role` field
   const isSeller    = auth?.role === "seller";
@@ -442,6 +465,36 @@ export default function LoggedInHome() {
           </div>
         );
       })}
+
+      {/* ═══════════════════════════════════════════════════════════
+          RECOMMENDED FOR YOU (ML)
+      ═══════════════════════════════════════════════════════════ */}
+      {recVendors.length > 0 && (
+        <section className="py-6 px-4 max-w-7xl mx-auto">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-accent" />
+              <h2 className="text-xl font-bold text-gray-800">Recommended for you</h2>
+            </div>
+            <button
+              onClick={() => navigate("/search")}
+              className="text-sm text-primary font-medium hover:underline flex items-center gap-1"
+            >
+              Show All <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 mb-5 -mt-3">
+            Matched on location, rating, experience and your budget
+          </p>
+          <div className="flex gap-4 overflow-x-auto pb-3 hide-scrollbar">
+            {recVendors.map(({ vendor, recommendation }) => (
+              <div key={vendor.id} className="w-60 flex-shrink-0">
+                <VendorCard vendor={vendor} recommendation={recommendation} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════
           BASED ON WHAT YOU MIGHT LIKE

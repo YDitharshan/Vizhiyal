@@ -2,6 +2,7 @@
 // createProfile · getMyProfile · updateProfile · listVendors · getVendorById
 import { validationResult } from "express-validator";
 import prisma from "../config/db.js";
+import { coordsForLocation } from "../utils/cityCoords.js";
 
 // ── @POST /api/vendors/profile  (seller only) ─────────────────
 export const createProfile = async (req, res) => {
@@ -22,6 +23,9 @@ export const createProfile = async (req, res) => {
     if (existing)
       return res.status(409).json({ success: false, message: "Vendor profile already exists" });
 
+    // Derive coordinates from the city so the recommender can use distance.
+    const coords = coordsForLocation(location);
+
     // Create profile + sync phone/location back to User row in one transaction
     const [profile] = await prisma.$transaction([
       prisma.vendorProfile.create({
@@ -31,6 +35,8 @@ export const createProfile = async (req, res) => {
           category,
           description:    description    ?? "",
           location:       location       ?? "",
+          latitude:       coords?.lat    ?? null,
+          longitude:      coords?.lng    ?? null,
           portfolio:      portfolio      ?? [],
           tagline:        tagline        ?? "",
           languages:      languages      ?? [],
@@ -89,6 +95,9 @@ export const updateProfile = async (req, res) => {
     tagline, languages, portfolioItems, workExperience, skills, certifications,
   } = req.body;
 
+  // When location changes, re-derive coordinates for the recommender.
+  const coords = location !== undefined ? coordsForLocation(location) : undefined;
+
   try {
     // Update vendor profile + sync phone/location to User row in one transaction
     const [profile] = await prisma.$transaction([
@@ -98,7 +107,7 @@ export const updateProfile = async (req, res) => {
           ...(businessName    !== undefined && { businessName }),
           ...(category        !== undefined && { category }),
           ...(description     !== undefined && { description }),
-          ...(location        !== undefined && { location }),
+          ...(location        !== undefined && { location, latitude: coords?.lat ?? null, longitude: coords?.lng ?? null }),
           ...(portfolio       !== undefined && { portfolio }),
           ...(tagline         !== undefined && { tagline }),
           ...(languages       !== undefined && { languages }),
@@ -211,21 +220,157 @@ export const listVendors = async (req, res) => {
 // ── @GET /api/vendors/:id  (public) ──────────────────────────
 export const getVendorById = async (req, res) => {
   try {
-    const vendor = await prisma.vendorProfile.findUnique({
-      where: { id: req.params.id },
-      include: {
-        user: { select: { name: true, avatar: true, location: true, createdAt: true } },
-        // Order newest-first so order matches the seller's own Gigs page
-        gigs: { where: { status: "active" }, orderBy: { createdAt: "desc" } },
-      },
-    });
+    const [vendor, verifiedWorkCount] = await Promise.all([
+      prisma.vendorProfile.findUnique({
+        where: { id: req.params.id },
+        include: {
+          user: { select: { name: true, avatar: true, location: true, createdAt: true } },
+          // Order newest-first so order matches the seller's own Gigs page
+          gigs: { where: { status: "active" }, orderBy: { createdAt: "desc" } },
+        },
+      }),
+      // "Verified work" = completed bookings backed by delivery evidence.
+      prisma.booking.count({
+        where: {
+          vendorId: req.params.id,
+          status: "completed",
+          completionImages: { isEmpty: false },
+        },
+      }),
+    ]);
 
     if (!vendor)
       return res.status(404).json({ success: false, message: "Vendor not found" });
 
-    return res.json({ success: true, vendor });
+    return res.json({ success: true, vendor: { ...vendor, verifiedWorkCount } });
   } catch (err) {
     console.error("getVendorById error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+// ── @GET /api/vendors/:id/verified-work  (public) ────────────
+// Proof-of-Work portfolio: every item is provably tied to a REAL completed
+// booking on the platform (delivery evidence submitted by the seller + the
+// buyer's review). Unlike a self-uploaded gallery, these cannot be faked —
+// the moat a pure social profile can't replicate.
+export const getVerifiedWork = async (req, res) => {
+  const { page = 1, limit = 12 } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const where = {
+    vendorId: req.params.id,
+    status: "completed",
+    completionImages: { isEmpty: false },
+  };
+
+  try {
+    const [bookings, total] = await Promise.all([
+      prisma.booking.findMany({
+        where,
+        skip,
+        take: Number(limit),
+        orderBy: { completionSubmittedAt: "desc" },
+        select: {
+          id: true,
+          eventType: true,
+          completionNote: true,
+          completionImages: true,
+          completionSubmittedAt: true,
+          packageType: true,
+          gig:    { select: { id: true, title: true, category: true } },
+          buyer:  { select: { name: true } },
+          review: { select: { rating: true, comment: true, createdAt: true } },
+        },
+      }),
+      prisma.booking.count({ where }),
+    ]);
+
+    // Shape each booking into a "verified work" provenance item.
+    const items = bookings.map((b) => ({
+      bookingId:   b.id,
+      gigId:       b.gig?.id,
+      gigTitle:    b.gig?.title || "",
+      category:    b.gig?.category || "",
+      eventType:   b.eventType || "",
+      images:      b.completionImages,
+      note:        b.completionNote || "",
+      completedAt: b.completionSubmittedAt,
+      // Buyer name partially masked for privacy (e.g. "Nimal P.")
+      buyerName:   maskName(b.buyer?.name),
+      reviewed:    !!b.review,
+      rating:      b.review?.rating ?? null,
+      reviewComment: b.review?.comment ?? "",
+    }));
+
+    return res.json({
+      success: true,
+      items,
+      pagination: {
+        total,
+        page:  Number(page),
+        limit: Number(limit),
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+    });
+  } catch (err) {
+    console.error("getVerifiedWork error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// ── @GET /api/vendors/:id/works-with  (public) ───────────────
+// TrustGraph synergy: vendors with a proven track record of serving the SAME
+// events as this one (co-occurrence in Event bundles). A signal only a booking
+// graph can produce — "this caterer has done N events with this DJ".
+export const getWorksWith = async (req, res) => {
+  const vendorId = req.params.id;
+  const limit = Number(req.query.limit) || 6;
+
+  try {
+    // Events this vendor was part of, with the other vendors on each event.
+    const events = await prisma.event.findMany({
+      where: { bookings: { some: { vendorId } } },
+      select: { bookings: { select: { vendorId: true } } },
+    });
+
+    // Count co-occurrences with every other vendor.
+    const coCount = new Map();
+    for (const ev of events) {
+      const others = new Set(ev.bookings.map((b) => b.vendorId).filter((id) => id && id !== vendorId));
+      for (const id of others) coCount.set(id, (coCount.get(id) || 0) + 1);
+    }
+
+    if (coCount.size === 0)
+      return res.json({ success: true, partners: [] });
+
+    const ids = [...coCount.keys()];
+    const vendors = await prisma.vendorProfile.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true, businessName: true, category: true, location: true,
+        avgRating: true, totalReviews: true, isVerified: true,
+        reliabilityScore: true, reliabilityTier: true,
+        user: { select: { avatar: true } },
+      },
+    });
+
+    const partners = vendors
+      .map((v) => ({ ...v, coEvents: coCount.get(v.id) }))
+      .sort((a, b) => b.coEvents - a.coEvents || b.reliabilityScore - a.reliabilityScore)
+      .slice(0, limit);
+
+    return res.json({ success: true, partners });
+  } catch (err) {
+    console.error("getWorksWith error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// "Nimal Perera" → "Nimal P." — keep buyer identity light-touch on a public page.
+function maskName(name) {
+  if (!name) return "Verified buyer";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+}

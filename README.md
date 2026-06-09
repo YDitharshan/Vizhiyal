@@ -27,7 +27,7 @@
 ## 🌟 Overview
 
 **Vizhiyal EMS** is a full-stack event services marketplace where buyers discover and book independent event service providers across Sri Lanka. The platform is built around a **gig-first model** — every listing is an independent gig (not a vendor profile), each with its own pricing, photos, rating, and reviews — similar to how Fiverr works, but tailored for the Sri Lankan events industry.
-
+<!--  -->
 ### What Problem Does It Solve?
 
 - **For Buyers:** Finding reliable, reviewed event vendors (photographers, DJs, caterers, decorators, etc.) in one place instead of searching across social media

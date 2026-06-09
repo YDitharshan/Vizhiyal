@@ -1,0 +1,9 @@
+
+.DS_Store
+**/.DS_Store
+
+# Python / ML service
+ml-service/.venv/
+**/__pycache__/
+*.pyc
+ml-service/models/*.joblib

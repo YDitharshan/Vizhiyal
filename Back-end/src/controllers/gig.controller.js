@@ -69,6 +69,8 @@ export const listGigs = async (req, res) => {
               avgRating: true,
               totalReviews: true,
               isVerified: true,
+              reliabilityScore: true,
+              reliabilityTier: true,
               location: true,
               user: { select: { name: true, avatar: true } },
             },

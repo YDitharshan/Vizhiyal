@@ -42,6 +42,8 @@ export function adaptGig(g) {
     vendorName:    g.vendor?.businessName || "",
     location:      g.vendor?.location    || "",
     verified:      g.vendor?.isVerified || false,
+    reliabilityScore: g.vendor?.reliabilityScore || 0,
+    reliabilityTier:  g.vendor?.reliabilityTier  || "new",
     // Use gig-level rating (not vendor aggregate) — each gig is rated independently
     rating:        +(g.avgRating    || 0).toFixed(1),
     reviewCount:   g.totalReviews   || 0,

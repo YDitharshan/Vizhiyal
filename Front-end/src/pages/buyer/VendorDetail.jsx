@@ -9,10 +9,13 @@ import {
   MessageSquare, X, Send, ChevronDown,
   Star, ClipboardList, Heart, Images,
   ChevronLeft, ChevronRight, Loader2, Eye,
-  ListOrdered, AlertCircle,
+  ListOrdered, AlertCircle, BadgeCheck,
 } from "lucide-react";
 import StarRating from "../../components/common/StarRating";
 import UserAvatar from "../../components/common/UserAvatar";
+import VerifiedWork from "../../components/common/VerifiedWork";
+import WorksWith from "../../components/common/WorksWith";
+import ReliabilityBadge from "../../components/common/ReliabilityBadge";
 import { vendorApi } from "../../services/vendorApi";
 import { gigApi    } from "../../services/gigApi";
 import { reviewApi } from "../../services/reviewApi";
@@ -451,6 +454,10 @@ export default function VendorDetail() {
           rating:          +(v.avgRating     || 0).toFixed(1),
           completedOrders: v.completedOrders || 0,
           verified:        v.isVerified      || false,
+          verifiedWorkCount: v.verifiedWorkCount || 0,
+          reliabilityScore:  v.reliabilityScore || 0,
+          reliabilityTier:   v.reliabilityTier  || "new",
+          reliabilityBreakdown: v.reliabilityBreakdown || null,
           profileImage:    resolveUrl(v.user?.avatar) || null,
           tags:            Array.isArray(v.tags) ? v.tags : [],
           description:     v.description     || "",
@@ -652,6 +659,15 @@ export default function VendorDetail() {
               <div className="flex items-center gap-1.5 mt-0.5">
                 <p className="text-white/80 text-sm">{vendor.name}</p>
                 {vendor.verified && <ShieldCheck className="w-4 h-4 text-accent" />}
+                {vendor.verifiedWorkCount > 0 && (
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-white bg-accent/90 px-2 py-0.5 rounded-full">
+                    <BadgeCheck className="w-3 h-3" />
+                    {vendor.verifiedWorkCount} verified job{vendor.verifiedWorkCount === 1 ? "" : "s"}
+                  </span>
+                )}
+                {vendor.reliabilityScore > 0 && (
+                  <ReliabilityBadge score={vendor.reliabilityScore} tier={vendor.reliabilityTier} size="sm" />
+                )}
               </div>
             </div>
           </div>
@@ -769,6 +785,21 @@ export default function VendorDetail() {
                 <p className="text-sm text-gray-600 leading-relaxed">{vendor.description}</p>
               </div>
             )}
+
+            {/* TrustGraph — Reliability Score breakdown (explainable trust) */}
+            {!isPreview && vendor.reliabilityScore > 0 && vendor.reliabilityBreakdown?.sub && (
+              <ReliabilityCard
+                score={vendor.reliabilityScore}
+                tier={vendor.reliabilityTier}
+                breakdown={vendor.reliabilityBreakdown}
+              />
+            )}
+
+            {/* Verified Work — Proof-of-Work portfolio (real completed bookings) */}
+            {!isPreview && <VerifiedWork vendorId={vendor.id} />}
+
+            {/* TrustGraph — "Works well together" synergy rail */}
+            {!isPreview && <WorksWith vendorId={vendor.id} />}
 
             {/* Portfolio gallery — updates to show selected gig's images first */}
             {portfolio.length > 0 && (
@@ -1018,6 +1049,58 @@ export default function VendorDetail() {
         </div>
       </div>
     </>
+  );
+}
+
+// ── TrustGraph Reliability breakdown card ─────────────────────────────────────
+// Explains the 0–100 score by showing each transaction-derived factor.
+const FACTOR_LABELS = {
+  rating:     "Review rating",
+  experience: "Experience",
+  verified:   "Verified work",
+  completion: "Completion rate",
+  dispute:    "Dispute-free",
+  repeat:     "Repeat buyers",
+};
+
+function ReliabilityCard({ score, tier, breakdown }) {
+  const sub = breakdown.sub || {};
+  const counts = breakdown.counts || {};
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-primary" />
+          Reliability Score
+        </h2>
+        <ReliabilityBadge score={score} tier={tier} />
+      </div>
+      <p className="text-xs text-gray-500 mb-4">
+        Earned from real bookings — not followers. Here's what goes into it:
+      </p>
+
+      <div className="space-y-2.5">
+        {Object.keys(FACTOR_LABELS).map((k) => {
+          const pct = Math.round((sub[k] ?? 0) * 100);
+          return (
+            <div key={k} className="flex items-center gap-3">
+              <span className="text-xs text-gray-600 w-28 flex-shrink-0">{FACTOR_LABELS[k]}</span>
+              <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+              </div>
+              <span className="text-[11px] text-gray-400 w-8 text-right">{pct}%</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-4 pt-3 border-t border-gray-50 text-[11px] text-gray-400">
+        <span>{counts.completed ?? 0} completed</span>
+        <span>{counts.verified ?? 0} verified</span>
+        <span>{counts.repeatBuyers ?? 0} repeat buyers</span>
+        <span>{counts.disputes ?? 0} disputes</span>
+      </div>
+    </div>
   );
 }
 

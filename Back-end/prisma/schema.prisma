@@ -91,6 +91,13 @@ enum OfferStatus {
   withdrawn
 }
 
+enum EventStatus {
+  planning
+  booked
+  completed
+  cancelled
+}
+
 // ── User ──────────────────────────────────────────────────────
 model User {
   id           String       @id @default(uuid())
@@ -117,6 +124,7 @@ model User {
   promosCreated    PromoCode[]      @relation("PromoCreator")
   announcements    Announcement[]   @relation("AnnouncementCreator")
   offersAsBuyer    Offer[]          @relation("BuyerOffers")
+  events           Event[]          @relation("BuyerEvents")
 
   @@map("users")
 }
@@ -141,6 +149,30 @@ model VendorProfile {
   avgRating      Float    @default(0)
   totalReviews   Int      @default(0)
   isVerified     Boolean  @default(false)
+
+  // ── TrustGraph: Reliability Score ─────────────────────────────
+  // A transaction-derived 0–100 trust signal (NOT followers/likes): blends
+  // rating, experience, verified-work volume, completion rate, dispute rate
+  // and repeat-buyer rate. Recomputed by reliability.service.js on booking
+  // completion and by prisma/backfill-reliability.mjs. `breakdown` stores the
+  // per-factor sub-scores + raw counts so the UI can explain the number.
+  reliabilityScore     Int       @default(0)
+  reliabilityTier      String    @default("new") // new | established | reliable | elite
+  reliabilityBreakdown Json      @default("{}")
+  reliabilityUpdatedAt DateTime?
+
+  // ── Recommender features ──────────────────────────────────────
+  // latitude/longitude are derived from `location` via the SL city lookup
+  // table (src/utils/cityCoords.js) on every profile create/update.
+  latitude      Float?
+  longitude     Float?
+  // "previous work" signal — count of completed bookings; kept in sync by
+  // the booking controller and the backfill script.
+  completedJobs Int      @default(0)
+  // min/max price across this vendor's gig packages — cached so the
+  // recommender's price-fit lookup is O(1).
+  priceMin      Float?
+  priceMax      Float?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -226,6 +258,11 @@ model Booking {
   eventDate   DateTime
   eventType   String        @default("")
   notes       String        @default("")
+
+  // Multi-vendor Event Bundle this booking belongs to (null = standalone booking).
+  // One Event groups several bookings sharing a date/budget — see Event model.
+  eventId String?
+  event   Event?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
   totalAmount Float
   commission  Float
@@ -452,4 +489,37 @@ model Offer {
   updatedAt DateTime @updatedAt
 
   @@map("offers")
+}
+
+// ── Event ─────────────────────────────────────────────────────
+// A multi-vendor "Event Bundle" — one occasion (wedding, birthday, etc.)
+// that groups several Bookings sharing a single date, location and total
+// budget. Created by the Smart Event Bundle Builder: the buyer picks a date,
+// budget and the categories they need; the AI Budget Concierge (ml-service
+// /plan) splits the budget across categories and recommends a gig for each.
+// The buyer then books the whole bundle in one atomic checkout.
+model Event {
+  id        String @id @default(uuid())
+
+  buyerId String
+  buyer   User   @relation("BuyerEvents", fields: [buyerId], references: [id])
+
+  title       String
+  eventType   String      @default("")   // wedding | birthday | corporate | ...
+  eventDate   DateTime
+  location    String      @default("")
+  guestCount  Int         @default(0)
+  totalBudget Float       @default(0)
+  status      EventStatus @default(planning)
+
+  // Snapshot of the AI plan that produced this bundle (category → allocation),
+  // kept for transparency / "why these vendors" even if gigs later change.
+  plan Json @default("[]")
+
+  bookings Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("events")
 }

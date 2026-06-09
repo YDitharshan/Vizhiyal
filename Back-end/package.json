@@ -10,6 +10,10 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
+    "seed": "node prisma/seed.js",
+    "seed:vendors": "node prisma/seed-vendors.mjs",
+    "seed:demo": "node prisma/seed-events-demo.mjs",
+    "backfill:reliability": "node prisma/backfill-reliability.mjs",
     "db:studio": "prisma studio"
   },
   "dependencies": {

@@ -7,6 +7,8 @@ import {
   updateProfile,
   listVendors,
   getVendorById,
+  getVerifiedWork,
+  getWorksWith,
 } from "../controllers/vendor.controller.js";
 import {
   getAvailability,
@@ -36,6 +38,8 @@ router.delete("/availability",    protect, authorize("seller"), unblockDate);
 // ── Public ────────────────────────────────────────────────────
 router.get("/",                   listVendors);
 router.get("/:id/availability",   getAvailability);
+router.get("/:id/verified-work",  getVerifiedWork);
+router.get("/:id/works-with",     getWorksWith);
 router.get("/:id",                getVendorById);
 
 export default router;

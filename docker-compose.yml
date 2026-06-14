@@ -26,7 +26,7 @@ services:
     environment:
       NODE_ENV: development
       # Connect to the postgres service by its compose name (vizhiyal user, see postgres service env).
-      DATABASE_URL: postgresql://vizhiyal:root@postgres:5432/vizhiyal
+      DATABASE_URL: postgresql://postgres:root@host.docker.internal:5432/vizhiyal
       JWT_SECRET: vizhiyal_jwt_secret_key_2025_change_in_production
       JWT_EXPIRES_IN: 7d
       CLIENT_URL: http://localhost:5173
@@ -37,11 +37,11 @@ services:
     ports:
       - "5001:5000" # host 5001 → container 5000 (macOS AirPlay holds 5000)
     volumes:
-      - ./Back-end/src:/app/src          # live-reload: edit src/ → nodemon restarts instantly
-      - ./Back-end/server.js:/app/server.js  # live-reload: edit server.js too
-      - ./Back-end/public:/app/public    # uploaded files survive container restarts
-      - ./Back-end/prisma:/app/prisma    # so seed/backfill/export scripts are in the container
-      - ./ml-service/data:/app/mldata    # export drops vendors.csv where ml-service reads it
+      - ./Back-end/src:/app/src # live-reload: edit src/ → nodemon restarts instantly
+      - ./Back-end/server.js:/app/server.js # live-reload: edit server.js too
+      - ./Back-end/public:/app/public # uploaded files survive container restarts
+      - ./Back-end/prisma:/app/prisma # so seed/backfill/export scripts are in the container
+      - ./ml-service/data:/app/mldata # export drops vendors.csv where ml-service reads it
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,9 +57,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./ml-service/app:/app/app      # live-reload friendly: edit app/ code
-      - ./ml-service/data:/app/data    # vendors.csv exported by the backend lands here
-      - mlmodels:/app/models           # persisted joblib model survives restarts
+      - ./ml-service/app:/app/app # live-reload friendly: edit app/ code
+      - ./ml-service/data:/app/data # vendors.csv exported by the backend lands here
+      - mlmodels:/app/models # persisted joblib model survives restarts
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,7 +75,7 @@ services:
     ports:
       - "5173:5173"
     volumes:
-      - ./Front-end/src:/app/src          # live-reload: edit src/ → Vite HMR updates instantly
+      - ./Front-end/src:/app/src # live-reload: edit src/ → Vite HMR updates instantly
     depends_on:
       - backend
 

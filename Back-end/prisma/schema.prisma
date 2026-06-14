@@ -98,6 +98,25 @@ enum EventStatus {
   cancelled
 }
 
+enum AuditType {
+  seller
+  user
+  order
+  gig
+  system
+}
+
+enum BackupType {
+  full
+  incremental
+}
+
+enum BackupStatus {
+  running
+  success
+  failed
+}
+
 // ── User ──────────────────────────────────────────────────────
 model User {
   id           String       @id @default(uuid())
@@ -125,6 +144,7 @@ model User {
   announcements    Announcement[]   @relation("AnnouncementCreator")
   offersAsBuyer    Offer[]          @relation("BuyerOffers")
   events           Event[]          @relation("BuyerEvents")
+  auditLogs        AuditLog[]       @relation("AuditActor")
 
   @@map("users")
 }
@@ -522,4 +542,50 @@ model Event {
   updatedAt DateTime @updatedAt
 
   @@map("events")
+}
+
+// ── AuditLog ──────────────────────────────────────────────────
+// One row per admin/superadmin action (approve seller, suspend user,
+// publish announcement, create admin, etc.). Written by the audit
+// helper (src/utils/auditLog.js) from inside the admin controllers,
+// and read by the SuperAdmin Audit Logs + Admin Activity Feed pages.
+// actorId is nullable so a deleted admin's history is preserved.
+model AuditLog {
+  id          String    @id @default(uuid())
+
+  actorId     String?
+  actor       User?     @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorName   String    @default("")   // snapshot — survives actor deletion
+  actorRole   String    @default("")   // admin | superadmin | system
+
+  action      String                   // human-readable, e.g. "Approved seller application"
+  type        AuditType @default(system)
+  targetType  String    @default("")   // user | booking | gig | review | ...
+  targetLabel String    @default("")   // name/id of the affected entity
+
+  createdAt   DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@map("audit_logs")
+}
+
+// ── Backup ────────────────────────────────────────────────────
+// Metadata for each database snapshot produced by the SuperAdmin
+// Backup & Recovery page. A real pg_dump is written to BACKUP_DIR
+// (see src/services/backup.service.js); this row records its status,
+// size and who initiated it. Restore is intentionally guarded.
+model Backup {
+  id              String       @id @default(uuid())
+  type            BackupType   @default(full)
+  status          BackupStatus @default(running)
+  sizeBytes       BigInt       @default(0)
+  fileName        String       @default("")
+  initiatedById   String?
+  initiatedByName String       @default("System")
+  error           String       @default("")
+
+  createdAt DateTime @default(now())
+
+  @@map("backups")
 }

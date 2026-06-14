@@ -4,3 +4,7 @@ dist/
 *.log
 
 /src/generated/prisma
+
+# Database backup dumps produced by the Backup & Recovery page
+/public/backups/
+/backups/

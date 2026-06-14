@@ -2,7 +2,11 @@
 // Admin-only endpoints: stats, analytics, users, vendor actions, bookings, gigs,
 // admin account management, announcements
 import bcrypt from "bcryptjs";
+import fs     from "fs";
+import path   from "path";
 import prisma  from "../config/db.js";
+import { logAudit }  from "../utils/auditLog.js";
+import { runBackup } from "../services/backup.service.js";
 
 // ── GET /api/admin/stats ──────────────────────────────────────────────────────
 export const getStats = async (req, res) => {
@@ -177,6 +181,12 @@ export const updateUserStatus = async (req, res) => {
       data:   { isActive },
       select: { id: true, name: true, isActive: true },
     });
+    logAudit(req, {
+      action:      isActive ? "Reinstated user account" : "Suspended user account",
+      type:        "user",
+      targetType:  "user",
+      targetLabel: user.name,
+    });
     res.json({ success: true, user });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -255,6 +265,12 @@ export const approveVendor = async (req, res) => {
       }),
     ]);
 
+    logAudit(req, {
+      action:      "Approved seller application",
+      type:        "seller",
+      targetType:  "user",
+      targetLabel: user.name,
+    });
     res.json({ success: true, user });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -268,6 +284,12 @@ export const rejectVendor = async (req, res) => {
       where:  { id: req.params.id },
       data:   { sellerStatus: "rejected" },
       select: { id: true, name: true, sellerStatus: true },
+    });
+    logAudit(req, {
+      action:      "Rejected seller application",
+      type:        "seller",
+      targetType:  "user",
+      targetLabel: user.name,
     });
     res.json({ success: true, user });
   } catch (err) {
@@ -283,6 +305,9 @@ export const suspendVendor = async (req, res) => {
       data:   { isActive: false },
       select: { id: true, name: true, isActive: true },
     });
+    logAudit(req, {
+      action: "Suspended vendor", type: "seller", targetType: "user", targetLabel: user.name,
+    });
     res.json({ success: true, user });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -296,6 +321,9 @@ export const reinstateVendor = async (req, res) => {
       where:  { id: req.params.id },
       data:   { isActive: true },
       select: { id: true, name: true, isActive: true },
+    });
+    logAudit(req, {
+      action: "Reinstated vendor", type: "seller", targetType: "user", targetLabel: user.name,
     });
     res.json({ success: true, user });
   } catch (err) {
@@ -332,6 +360,12 @@ export const updateBooking = async (req, res) => {
       where: { id: req.params.id },
       data:  { status },
     });
+    logAudit(req, {
+      action:      `Updated order status to ${status}`,
+      type:        "order",
+      targetType:  "booking",
+      targetLabel: booking.id.slice(0, 8),
+    });
     res.json({ success: true, booking });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -346,6 +380,9 @@ export const suspendGig = async (req, res) => {
       data:   { status: "paused" },
       select: { id: true, title: true, status: true },
     });
+    logAudit(req, {
+      action: "Suspended gig", type: "gig", targetType: "gig", targetLabel: gig.title,
+    });
     res.json({ success: true, gig });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -359,6 +396,9 @@ export const restoreGig = async (req, res) => {
       where:  { id: req.params.id },
       data:   { status: "active" },
       select: { id: true, title: true, status: true },
+    });
+    logAudit(req, {
+      action: "Restored gig", type: "gig", targetType: "gig", targetLabel: gig.title,
     });
     res.json({ success: true, gig });
   } catch (err) {
@@ -428,6 +468,13 @@ export const sendAnnouncement = async (req, res) => {
       });
     }
 
+    logAudit(req, {
+      action:      "Published announcement",
+      type:        "system",
+      targetType:  "announcement",
+      targetLabel: title.trim(),
+    });
+
     res.json({
       success:       true,
       announcement,
@@ -454,6 +501,12 @@ export const closeAnnouncement = async (req, res) => {
       data:  { read: true },
     });
 
+    logAudit(req, {
+      action:      "Closed announcement",
+      type:        "system",
+      targetType:  "announcement",
+      targetLabel: announcement.title,
+    });
     res.json({ success: true, announcement });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -506,6 +559,12 @@ export const createAdmin = async (req, res) => {
       select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
     });
 
+    logAudit(req, {
+      action:      `Created ${role} account`,
+      type:        "system",
+      targetType:  "user",
+      targetLabel: user.name,
+    });
     res.status(201).json({ success: true, user, tempPassword });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -522,7 +581,293 @@ export const toggleAdminStatus = async (req, res) => {
       data:   { isActive },
       select: { id: true, name: true, isActive: true },
     });
+    logAudit(req, {
+      action:      isActive ? "Reinstated admin account" : "Suspended admin account",
+      type:        "system",
+      targetType:  "user",
+      targetLabel: user.name,
+    });
     res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SUPERADMIN ANALYTICS & PLATFORM PAGES (real data)
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── GET /api/admin/revenue — deep revenue breakdown (Revenue Analytics page) ──
+export const getRevenue = async (req, res) => {
+  try {
+    const completed = await prisma.booking.findMany({
+      where:   { status: "completed" },
+      include: { gig: { select: { category: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const totalGross      = completed.reduce((s, b) => s + b.totalAmount, 0);
+    const totalCommission = completed.reduce((s, b) => s + b.commission,  0);
+    const totalPayouts    = totalGross - totalCommission;
+    const avgOrderValue   = completed.length ? Math.round(totalGross / completed.length) : 0;
+
+    // ── Monthly breakdown — last 6 months ──
+    const now   = new Date();
+    const slots = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      slots.push({
+        year:  d.getFullYear(),
+        month: d.getMonth(),
+        label: d.toLocaleString("en-LK", { month: "short", year: "numeric" }),
+      });
+    }
+    const monthly = slots.map(({ year, month, label }) => {
+      const rows = completed.filter(b => {
+        const d = new Date(b.createdAt);
+        return d.getFullYear() === year && d.getMonth() === month;
+      });
+      return {
+        month:      label,
+        gross:      Math.round(rows.reduce((s, b) => s + b.totalAmount, 0)),
+        commission: Math.round(rows.reduce((s, b) => s + b.commission,  0)),
+        orders:     rows.length,
+      };
+    });
+
+    // Top month + month-over-month growth (last vs previous)
+    const topMonth = monthly.reduce(
+      (best, m) => (m.gross > best.gross ? m : best),
+      { month: "—", gross: 0 },
+    ).month;
+
+    const last = monthly[monthly.length - 1]?.gross || 0;
+    const prev = monthly[monthly.length - 2]?.gross || 0;
+    const growth = prev > 0
+      ? `${last >= prev ? "+" : ""}${(((last - prev) / prev) * 100).toFixed(1)}%`
+      : (last > 0 ? "+100%" : "0%");
+
+    // ── By category ──
+    const catMap = {};
+    for (const b of completed) {
+      const cat = b.gig?.category || "Other";
+      if (!catMap[cat]) catMap[cat] = { gross: 0, commission: 0, orders: 0 };
+      catMap[cat].gross      += b.totalAmount;
+      catMap[cat].commission += b.commission;
+      catMap[cat].orders     += 1;
+    }
+    const byCategory = Object.entries(catMap)
+      .map(([category, v]) => ({
+        category,
+        gross:      Math.round(v.gross),
+        commission: Math.round(v.commission),
+        orders:     v.orders,
+      }))
+      .sort((a, b) => b.gross - a.gross);
+
+    res.json({
+      success: true,
+      revenue: {
+        summary: {
+          totalGross:      Math.round(totalGross),
+          totalCommission: Math.round(totalCommission),
+          totalPayouts:    Math.round(totalPayouts),
+          avgOrderValue,
+          topMonth,
+          growth,
+        },
+        monthly,
+        byCategory,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── GET /api/admin/audit-logs — chronological log + per-admin activity ────────
+// Powers BOTH the Audit Logs page and the Admin Activity Feed.
+export const getAuditLogs = async (req, res) => {
+  try {
+    const [logs, admins] = await Promise.all([
+      prisma.auditLog.findMany({
+        orderBy: { createdAt: "desc" },
+        take:    200,
+        include: { actor: { select: { id: true, name: true, avatar: true, role: true, isActive: true } } },
+      }),
+      prisma.user.findMany({
+        where:   { role: { in: ["admin", "superadmin"] } },
+        select:  { id: true, name: true, avatar: true, role: true, isActive: true },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
+
+    const shaped = logs.map(l => ({
+      id:          l.id,
+      adminId:     l.actorId,
+      admin:       l.actor?.name || l.actorName || "System",
+      adminAvatar: l.actor?.avatar || "",
+      adminRole:   l.actor?.role  || l.actorRole,
+      action:      l.action,
+      target:      l.targetLabel,
+      type:        l.type,
+      createdAt:   l.createdAt,
+    }));
+
+    res.json({ success: true, logs: shaped, admins });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── GET /api/admin/system-health — live server / DB / storage metrics ─────────
+function fmtBytes(bytes) {
+  if (!bytes) return "0 B";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+}
+function dirSize(dir) {
+  let total = 0;
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+  catch { return 0; }
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    try {
+      if (e.isDirectory()) total += dirSize(full);
+      else total += fs.statSync(full).size;
+    } catch { /* skip unreadable */ }
+  }
+  return total;
+}
+
+export const getSystemHealth = async (req, res) => {
+  try {
+    // DB ping + latency
+    let dbOk = true;
+    let dbLatency = 0;
+    const t0 = Date.now();
+    try { await prisma.$queryRaw`SELECT 1`; dbLatency = Date.now() - t0; }
+    catch { dbOk = false; }
+
+    // Record counts (real)
+    const [totalUsers, activeUsers, totalBookings, totalGigs] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { isActive: true } }),
+      prisma.booking.count(),
+      prisma.gig.count(),
+    ]);
+
+    // Process metrics
+    const mem        = process.memoryUsage();
+    const heapPct    = Math.round((mem.heapUsed / mem.heapTotal) * 100);
+    const uptimeSec  = Math.floor(process.uptime());
+    const d = Math.floor(uptimeSec / 86400);
+    const h = Math.floor((uptimeSec % 86400) / 3600);
+    const m = Math.floor((uptimeSec % 3600) / 60);
+    const uptimeLabel = d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+
+    // Uploads storage (real bytes on disk)
+    const uploadsBytes = dirSize(path.join(process.cwd(), "public", "uploads"));
+
+    const dbStatus      = dbOk ? "operational" : "down";
+    const storageStatus = "operational";
+
+    const services = [
+      { name: "Web Server", status: "operational", uptime: uptimeLabel },
+      { name: "Database",   status: dbStatus,       uptime: dbOk ? `${dbLatency} ms` : "unreachable" },
+      { name: "Storage",    status: storageStatus,  uptime: fmtBytes(uploadsBytes) },
+    ];
+
+    const metrics = [
+      { label: "DB Response Time", value: dbOk ? `${dbLatency} ms` : "—", status: !dbOk ? "bad" : dbLatency < 100 ? "good" : "warning", note: "live SELECT 1 round-trip" },
+      { label: "Server Uptime",    value: uptimeLabel,                    status: "good",    note: "since last restart" },
+      { label: "Memory (RSS)",     value: fmtBytes(mem.rss),              status: "good",    note: `heap ${heapPct}% used` },
+      { label: "Uploads Storage",  value: fmtBytes(uploadsBytes),         status: uploadsBytes > 5 * 1024 ** 3 ? "warning" : "good", note: "files on disk" },
+      { label: "Active Users",     value: String(activeUsers),            status: "good",    note: `${totalUsers} total accounts` },
+      { label: "Records",          value: `${totalBookings + totalGigs}`, status: "good",    note: `${totalBookings} bookings · ${totalGigs} gigs` },
+    ];
+
+    res.json({
+      success: true,
+      health: {
+        status:    dbOk ? "operational" : "degraded",
+        checkedAt: new Date().toISOString(),
+        uptimeLabel,
+        services,
+        metrics,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── GET /api/admin/backups — list backup history ──────────────────────────────
+const serializeBackup = (b) => ({
+  id:          b.id,
+  type:        b.type,
+  status:      b.status,
+  size:        Number(b.sizeBytes) ? fmtBytes(Number(b.sizeBytes)) : "—",
+  sizeBytes:   Number(b.sizeBytes),
+  fileName:    b.fileName,
+  initiatedBy: b.initiatedByName,
+  error:       b.error,
+  createdAt:   b.createdAt,
+});
+
+export const getBackups = async (req, res) => {
+  try {
+    const backups = await prisma.backup.findMany({ orderBy: { createdAt: "desc" }, take: 50 });
+    res.json({ success: true, backups: backups.map(serializeBackup) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── POST /api/admin/backups — run a real pg_dump now ──────────────────────────
+export const createBackup = async (req, res) => {
+  try {
+    const record = await runBackup(req.user);
+    logAudit(req, {
+      action:      record.status === "success" ? "Ran database backup" : "Database backup failed",
+      type:        "system",
+      targetType:  "backup",
+      targetLabel: record.fileName,
+    });
+    const ok = record.status === "success";
+    res.status(ok ? 201 : 500).json({
+      success: ok,
+      backup:  serializeBackup(record),
+      message: ok ? "Backup completed." : `Backup failed: ${record.error}`,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── POST /api/admin/backups/:id/restore — guarded (no destructive action) ─────
+export const restoreBackup = async (req, res) => {
+  try {
+    const backup = await prisma.backup.findUnique({ where: { id: req.params.id } });
+    if (!backup) return res.status(404).json({ success: false, message: "Backup not found" });
+
+    logAudit(req, {
+      action:      "Requested database restore",
+      type:        "system",
+      targetType:  "backup",
+      targetLabel: backup.fileName,
+    });
+
+    // Restoring overwrites the live database — intentionally NOT executed here.
+    // Operators should run `pg_restore`/`psql` against the dump file manually.
+    res.json({
+      success: false,
+      guarded: true,
+      message: "Restore is disabled in this environment for safety. " +
+               `Restore the dump file '${backup.fileName}' manually using psql.`,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

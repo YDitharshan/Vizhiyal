@@ -36,4 +36,12 @@ export const adminApi = {
   getAdminAccounts:    ()         => api.get("/admin/accounts"),
   createAdmin:         (data)     => api.post("/admin/accounts", data),
   toggleAdminStatus:   (id, data) => api.patch(`/admin/accounts/${id}/status`, data),
+
+  // ── SuperAdmin platform pages (superadmin only) ───────────────
+  getRevenue:        ()   => api.get("/admin/revenue"),
+  getAuditLogs:      ()   => api.get("/admin/audit-logs"),
+  getSystemHealth:   ()   => api.get("/admin/system-health"),
+  getBackups:        ()   => api.get("/admin/backups"),
+  runBackup:         ()   => api.post("/admin/backups"),
+  restoreBackup:     (id) => api.post(`/admin/backups/${id}/restore`),
 };

@@ -10,6 +10,8 @@ import {
   suspendGig, restoreGig,
   getAnnouncements, sendAnnouncement, closeAnnouncement,
   getAdminAccounts, createAdmin, toggleAdminStatus,
+  getRevenue, getAuditLogs, getSystemHealth,
+  getBackups, createBackup, restoreBackup,
 } from "../controllers/admin.controller.js";
 
 const router        = Router();
@@ -49,5 +51,13 @@ router.patch("/announcements/:id/close",  ...adminOnly,     closeAnnouncement);
 router.get("/accounts",               ...superAdminOnly, getAdminAccounts);
 router.post("/accounts",              ...superAdminOnly, createAdmin);
 router.patch("/accounts/:id/status",  ...superAdminOnly, toggleAdminStatus);
+
+// ── SuperAdmin platform pages (superadmin only) ─────────────────
+router.get("/revenue",               ...superAdminOnly, getRevenue);
+router.get("/audit-logs",            ...superAdminOnly, getAuditLogs);
+router.get("/system-health",         ...superAdminOnly, getSystemHealth);
+router.get("/backups",               ...superAdminOnly, getBackups);
+router.post("/backups",              ...superAdminOnly, createBackup);
+router.post("/backups/:id/restore",  ...superAdminOnly, restoreBackup);
 
 export default router;

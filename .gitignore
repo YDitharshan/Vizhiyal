@@ -6,4 +6,3 @@
 ml-service/.venv/
 **/__pycache__/
 *.pyc
-ml-service/models/*.joblib
